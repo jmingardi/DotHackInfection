@@ -1,0 +1,63 @@
+--- a/runtime/src/dispatch.cpp
++++ b/runtime/src/dispatch.cpp
+@@ -37,6 +37,7 @@
+     const ModuleInfo *module;
+     int rank;
+     const SoftIndex *soft = nullptr;
++    std::vector<std::uint32_t> guard_words;
+ };
+ 
+ // Every module there is: the ones the build was translated with and the ones translated while the game ran (ee_live.cpp, added by
+@@ -78,9 +79,12 @@
+ // Adds an instance, keeping g_instances in order of rank (higher first, the earlier one first among equals): the first one in place that
+ // has an entry is the one that runs.
+ Instance *add_instance(std::uint32_t base, const ModuleInfo *m, int rank, const SoftIndex *soft = nullptr) {
++    Instance instance{base, m, rank, soft && !soft->groups.empty() ? soft : nullptr, {}};
++    for (std::uint32_t k = 0; k < m->check_count; ++k) instance.guard_words.push_back(base + m->checks[2 * k]);
++    std::sort(instance.guard_words.begin(), instance.guard_words.end());
+     auto at = g_instances.begin();
+     while (at != g_instances.end() && at->rank >= rank) ++at;
+-    return &*g_instances.insert(at, Instance{base, m, rank, soft && !soft->groups.empty() ? soft : nullptr});
++    return &*g_instances.insert(at, std::move(instance));
+ }
+ 
+ const UnitInfo *module_unit(const ModuleInfo &m, std::uint32_t offset) {
+@@ -171,6 +175,20 @@
+     out << std::hex << pc << "\n";
+ }
+ 
++}
++
++// Bulk transfers can replace an overlay and call its common entry before a
++// rotating spot check reaches a changed word. Drop only instances whose guard
++// words were overwritten; the next lookup validates the complete module.
++void code_window_written(std::uint32_t address, std::uint32_t size) {
++    if (!size) return;
++    const std::uint32_t begin = address & (kRamSize - 1);
++    const std::uint64_t end = std::uint64_t{begin} + size;
++    std::erase_if(g_instances, [&](const Instance &i) {
++        if (!i.module->fixed_base || begin >= std::uint64_t{i.base} + i.module->size || end <= i.base) return false;
++        const auto word = std::lower_bound(i.guard_words.begin(), i.guard_words.end(), begin & ~3u);
++        return word != i.guard_words.end() && *word < end;
++    });
+ }
+ 
+ void register_units(const UnitInfo *units, std::uint32_t count) {
+--- a/runtime/src/memory.cpp
++++ b/runtime/src/memory.cpp
+@@ -9,6 +9,7 @@
+ #include <cstring>
+ 
+ namespace ps2 {
++void code_window_written(std::uint32_t address, std::uint32_t size);
+ 
+ alignas(64) std::uint8_t g_ram[kRamSize + 64];
+ alignas(64) std::uint8_t g_spr[kScratchpadSize];
+@@ -129,6 +130,7 @@
+ }
+ 
+ void watch_span(std::uint32_t a, std::uint32_t n, const char *via) {
++    code_window_written(a, n);
+     if (!g_watch_on) return;
+     const std::uint32_t s = a & (kRamSize - 1), e = s + n;
+     if (e <= g_watch_base || s >= g_watch_end) return;

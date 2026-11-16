@@ -1,0 +1,53 @@
+--- a/runtime/src/vu_micro.cpp
++++ b/runtime/src/vu_micro.cpp
+@@ -1131,7 +1131,8 @@
+     // what run_entry and lookup would do for it, without their set-up. Anything else (a new program, a changed code memory, a program
+     // that is not compiled) takes the long way.
+     static const bool plain = std::getenv("PS2_VU_INTERPRET") == nullptr && std::getenv("PS2_VU_COUNT") == nullptr && std::getenv("PS2_VU_CHECK") == nullptr &&
+-                              std::getenv("PS2_VU_TIME") == nullptr && std::getenv("PS2_TRACE_VU1RUN") == nullptr && jit::mode() == 0;
++                              std::getenv("PS2_VU_TIME") == nullptr && std::getenv("PS2_TRACE_VU1RUN") == nullptr &&
++                              std::getenv("PS2_VU_INTERPRET_KEYS") == nullptr && jit::mode() == 0;
+     for (;;) {
+         if (plain && !live::ready()) {
+             const EntryCache &e = g_entries[(pc & 16383u) >> 3];
+@@ -1210,6 +1211,30 @@
+     row.ticks += ticks;
+ }
+ 
++// A title can retain reference execution for individually verified bad
++// translations while other programs keep the compiled path. Keys identify
++// reachable microcode, not upload addresses which different programs reuse.
++static bool reference_program(std::uint64_t key) {
++    static const auto keys = [] {
++        std::unordered_set<std::uint64_t> result;
++        const char *value = std::getenv("PS2_VU_INTERPRET_KEYS");
++        const std::string text = value ? value : "";
++        const char *at = text.c_str();
++        while (*at) {
++            char *end = nullptr;
++            const auto value = std::strtoull(at, &end, 16);
++            if (end != at) { result.insert(value); at = end; }
++            else ++at;
++        }
++        return result;
++    }();
++    if (!keys.contains(key)) return false;
++    static std::unordered_set<std::uint64_t> reported;
++    if (reported.insert(key).second)
++        std::fprintf(stderr, "[vu] reference execution for compatibility key %016llX\n", static_cast<unsigned long long>(key));
++    return true;
++}
++
+ void run_entry(int unit, std::uint32_t pc) {
+     if (unit == 1) g_trace_vu1_pc = pc;
+     if (unit == 1) { static const bool log_runs = std::getenv("PS2_TRACE_VU1RUN") != nullptr; if (log_runs) std::fprintf(stderr, "[vu1-run] pc %X\n", pc); }
+@@ -1221,7 +1246,8 @@
+     static std::unordered_map<std::uint32_t, std::uint64_t> misses;
+     if (unit == 1 && !interpret_only) {
+         if (live::ready()) install_live();
+-        const ProgramFn fn = lookup(pc);
++        ProgramFn fn = lookup(pc);
++        if (fn && reference_program(g_entries[(pc & 16383u) >> 3].key)) fn = nullptr;
+         if (fn) {
+             ++compiled;
+             const ProgramFn jit = g_entries[(pc & 16383u) >> 3].jit;

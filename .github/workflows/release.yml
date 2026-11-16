@@ -1,0 +1,97 @@
+name: Windows release pipeline
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Optional version (blank uses 0.1.<workflow run number>)
+        type: string
+        required: false
+        default: ''
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  source:
+    name: Check source package
+    if: >-
+      github.repository == 'jmingardi/DotHackInfection' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' ||
+      (github.actor == github.repository_owner && github.triggering_actor == github.repository_owner))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      publish: ${{ vars.RELEASE_PUBLISH_ENABLED == 'true' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11'
+      - id: version
+        run: python scripts/release.py check
+      - run: python -m unittest discover -s scripts -p test_release_pipeline.py -v
+      - run: python scripts/release.py source --version '${{ steps.version.outputs.version }}'
+  windows:
+    name: Build and create draft
+    needs: source
+    runs-on: windows-2022
+    timeout-minutes: 120
+    permissions:
+      contents: write
+    env:
+      RELEASE_VERSION: ${{ needs.source.outputs.version }}
+      SOURCE_COMMIT: ${{ github.sha }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11'
+      - name: Validate private input settings
+        env:
+          INPUTS_COMMIT: ${{ vars.RECOMP_BUILD_INPUTS_COMMIT }}
+          INPUTS_SHA256: ${{ vars.RECOMP_BUILD_INPUTS_SHA256 }}
+          HAS_KEY: ${{ secrets.RECOMP_INPUTS_DEPLOY_KEY != '' }}
+        run: |
+          if ($env:INPUTS_COMMIT -notmatch '^[0-9a-f]{40}$' -or $env:INPUTS_SHA256 -notmatch '^[0-9a-f]{64}$' -or $env:HAS_KEY -ne 'true') {
+            throw 'Private build inputs must be configured before building.'
+          }
+      - name: Fetch pinned private inputs using read-only access
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: jmingardi/DotHackInfection-build-inputs
+          ref: ${{ vars.RECOMP_BUILD_INPUTS_COMMIT }}
+          ssh-key: ${{ secrets.RECOMP_INPUTS_DEPLOY_KEY }}
+          persist-credentials: false
+          path: _private-build-inputs
+      - name: Build and verify public release packages
+        env:
+          RECOMP_BUILD_INPUTS_SHA256: ${{ vars.RECOMP_BUILD_INPUTS_SHA256 }}
+        run: python scripts/release.py build
+      - name: Create new draft (publishing is disabled by default)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PUBLISH_ENABLED: ${{ needs.source.outputs.publish }}
+        run: |
+          $releaseArgs = @('scripts/release.py', 'create')
+          if ($env:PUBLISH_ENABLED -eq 'true') { $releaseArgs += '--publish' }
+          python @releaseArgs
+      - name: Record scope
+        run: |
+          'Clean Windows build and automated checks passed. Gameplay requires your own ISO and separate smoke testing.' >> $env:GITHUB_STEP_SUMMARY
+          'Release ZIPs are attached directly to a draft; no private inputs or binaries are uploaded as public Actions artifacts.' >> $env:GITHUB_STEP_SUMMARY
+          'Publishing requires RELEASE_PUBLISH_ENABLED=true. Initial configuration keeps it false.' >> $env:GITHUB_STEP_SUMMARY

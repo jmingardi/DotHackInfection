@@ -1,0 +1,147 @@
+--- a/runtime/include/ps2/vu_ops.hpp
++++ b/runtime/include/ps2/vu_ops.hpp
+@@ -15,6 +15,7 @@
+ #include <cassert>
+ #include <cmath>
+ #include <cstdint>
++#include <cstdlib>
+ #include <cstring>
+ #include <vector>
+ 
+@@ -1302,4 +1303,50 @@
+ PS2_VU_INLINE void vefu(unsigned, Vu0Regs &r, unsigned index, unsigned fs, unsigned fsf) { efu(r, index, fs, fsf); }
+ #endif
+ 
+-}
++// Opt-in approximation of PATH1's concurrent reads. Some programs issue XGKICK
++// before writing the tail of a short packet. Copying it at issue reads stale
++// vertices as A+D registers. This delays the copy in VU issue cycles; it does
++// not model the GIF's entire streaming FIFO. Pending work drains at a boundary.
++class KickPipe {
++    unsigned delay_;
++    std::uint32_t due_ = 0, address_ = 0;
++    bool pending_ = false;
++    void (*send_)(int, std::uint32_t);
++public:
++    static unsigned profile() {
++        static const unsigned delay = [] {
++            const char *v = std::getenv("PS2_VU_KICK_DELAY");
++            return v ? std::min(8u, static_cast<unsigned>(std::strtoul(v, nullptr, 10))) : 0u;
++        }();
++        return delay;
++    }
++    explicit KickPipe(unsigned delay = profile(), void (*send)(int, std::uint32_t) = vu::kick)
++        : delay_(delay), send_(send) {}
++    KickPipe(const KickPipe &) = delete;
++    KickPipe &operator=(const KickPipe &) = delete;
++    ~KickPipe() { flush(); }
++    void flush() {
++        if (!pending_) return;
++        pending_ = false;
++#if defined(__SSE2__)
++        const unsigned csr = _mm_getcsr();
++        _mm_setcsr(csr & ~0x40u);
++#endif
++        send_(1, address_);
++#if defined(__SSE2__)
++        _mm_setcsr(csr);
++#endif
++    }
++    void advance(std::uint32_t cycle) {
++        if (pending_ && static_cast<std::int32_t>(cycle - due_) >= 0) flush();
++    }
++    void issue(std::uint32_t cycle, std::uint32_t address) {
++        flush();
++        address_ = address;
++        due_ = cycle + delay_;
++        pending_ = true;
++        if (!delay_) flush();
++    }
++};
++
++}
+--- a/runtime/src/vu_micro.cpp
++++ b/runtime/src/vu_micro.cpp
+@@ -45,6 +45,7 @@
+     std::uint32_t data_qwords;
+     std::uint32_t tpc;
+     vuops::FlagPipe *pipe = nullptr;
++    vuops::KickPipe *kicks = nullptr;
+     // What a branch reads of the integer registers: the values from before the
+     // previous instruction when that one wrote them (see BranchView).
+     const std::uint16_t *branch_vi = nullptr;
+@@ -694,7 +695,10 @@
+         // ITOP in the VIF0. Sharing them lost VU1 its TOP whenever the VIF0 started a program, and gave VU0 whatever VU1 had latched.
+         case 0x68: store_vi(r, it, u.code == g_vu1_code ? g_top : 0u); break;
+         case 0x69: store_vi(r, it, u.code == g_vu1_code ? g_itop : vif::itop(0)); break;
+-        case 0x6C: xgkick(u, r.vi[is]); break;
++        case 0x6C:
++            if (u.kicks) u.kicks->issue(u.pipe->t, r.vi[is]);
++            else xgkick(u, r.vi[is]);
++            break;
+         case 0x70: case 0x71: case 0x72: case 0x73: case 0x74: case 0x75: case 0x76: case 0x78: case 0x79: case 0x7A: case 0x7C: case 0x7D: case 0x7E:
+             vuops::efu(r, index, fs, fsf);
+             break;
+@@ -1384,6 +1388,8 @@
+     vuops::FlagPipe pipe;
+     pipe.start(r);
+     u.pipe = &pipe;
++    vuops::KickPipe kicks(n == 1 ? vuops::KickPipe::profile() : 0u);
++    if (n == 1) u.kicks = &kicks;
+     std::uint32_t vf_ready[32][4] = {}, vi_ready[16] = {};
+     std::uint32_t pc = address & u.code_mask, npc = (pc + 8u) & u.code_mask;
+     bool ending = false;
+@@ -1412,6 +1418,7 @@
+         } else {
+             ++pipe.t;
+         }
++        kicks.advance(pipe.t);
+         read_q(u, pipe, r, current, hi);
+         fast_upper(r, d, out);
+         std::uint16_t was[16];
+--- a/recomp/vurecomp_gen.cpp
++++ b/recomp/vurecomp_gen.cpp
+@@ -960,6 +960,10 @@
+     // one branch per call instead of the sticky work at every flag site (in Silent Hill 2 and both God of War
+     // games every call starts so).
+     std::string o = head + std::string(late_flags ? "    FlagPipeV fl;\n" : "    FlagPipe fl;\n") + std::string("    fl.start(r);\n    bool pend = false, pendj = false, ending = false;\n    std::uint32_t jpc = 0;\n    (void)pend;\n    (void)pendj;\n    (void)ending;\n    (void)jpc;\n");
++    const bool delayed_kicks = p.unit == 1 && std::any_of(pcs.begin(), pcs.end(), [&](std::uint32_t pc) {
++        return lowers.at(pc).code.find("vu::kick(1, ") != std::string::npos;
++    });
++    if (delayed_kicks) o += "    KickPipe kicks;\n";
+     if (p.unit == 0) o += "    std::uint32_t steps = 0;\n";
+     if (dyn) o += "    const Vu0Regs saved = r;\n    std::uint8_t saved_mem[4096];\n    std::memcpy(saved_mem, mem, sizeof saved_mem);\n";
+     if (!delay.empty()) o += "    std::uint16_t bk = 0, next_bk = 0;\n    unsigned bi = 0;\n    (void)bk;\n    (void)next_bk;\n    (void)bi;\n";
+@@ -995,6 +999,7 @@
+         if (const auto kb = keep_bk.find(pc); kb != keep_bk.end()) body += std::format("next_bk = r.vi[{}]; ", kb->second);
+         body += u.pre;
+         std::string lcode = l.code;
++        if (delayed_kicks) replace_all(lcode, "vu::kick(1, ", "kicks.issue(fl.t, ");
+         if (const auto d = delay.find(pc); d != delay.end()) {
+             for (int reg = 1; reg < 16; ++reg) {
+                 if (d->second == 2) replace_all(lcode, std::format("r.vi[{}]", reg), std::format("(bi == {} ? bk : r.vi[{}])", reg, reg));
+@@ -1020,6 +1025,7 @@
+         if (plan.tracked[pc >> 3]) o += std::format("{}: {{ {}fl.t += 1u + ks_{:04X}[st]; ", label(pc), stop, pc);
+         else if (stall) o += std::format("{}: {{ {}fl.t += {}u; ", label(pc), stop, 1 + stall);
+         else o += std::format("{}: {{ {}++fl.t; ", label(pc), stop);
++        if (delayed_kicks) o += "kicks.advance(fl.t); ";
+         if (any_q && ps2::vu::reads_q(hi)) {
+             const ps2::vu::QRead kind = ps2::vu::q_read_kind(p.code.data(), kMask, pc);
+             if (kind == ps2::vu::kQNew) o += "fl.flush_q(r); ";
+@@ -1068,6 +1074,7 @@
+     }
+     if (dyn) o += std::format("bail:\n    r = saved;\n    std::memcpy(mem, saved_mem, sizeof saved_mem);\n    vu::vu0_restart({}u);\n    return;\n", p.entry & kMask);
+     o += "dispatch:\n    vu::interpret(1, jpc);\n    return;\n}\n\n";
++    if (delayed_kicks) replace_all(o, "vu::interpret(", "kicks.flush(); vu::interpret(");
+     // A FlagPipeV program with a flag site: its body becomes a template on kSticky (see above), the copy with kSticky true is called
+     // through a cold function of its own (_c), so the copy that runs stays as small as the body was without the sticky work.
+     const bool sticky_split = late_flags && o.find(", kSticky>(") != std::string::npos;
+@@ -1127,7 +1134,7 @@
+ 
+ // Bump this when the generated code changes in a way the headers do not show (a change in this file): libraries made earlier
+ // are then left alone and built again (vu_live.cpp).
+-const char *const kGeneratorVersion = "vurecomp 15";
++const char *const kGeneratorVersion = "vurecomp 16 kick-delay";
+ 
+ Result generate_files(std::vector<Input> inputs, const fs::path &out_dir, std::uint64_t live_stamp, std::size_t per_file, bool with_targets) {
+     std::vector<Program> programs;

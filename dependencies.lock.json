@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "framework": {
+    "name": "ps2-native-recomp",
+    "url": "https://github.com/exoteric33/ps2-native-recomp.git",
+    "commit": "3b2b2957bfe2ae6efbe8981ae71be33da6cd4424",
+    "license": "MIT",
+    "patches": [
+      "patches/ps2-native-recomp-vu-key-fallback.patch",
+      "patches/ps2-native-recomp-pad-center.patch",
+      "patches/ps2-native-recomp-overlay-write.patch",
+      "patches/ps2-native-recomp-cdvd-error.patch",
+      "patches/ps2-native-recomp-xgkick-delay.patch"
+    ]
+  },
+  "archives": [
+    {
+      "file": "wgpu-windows-x86_64-gnu-release.zip",
+      "url": "https://github.com/gfx-rs/wgpu-native/releases/download/v29.0.1.1/wgpu-windows-x86_64-gnu-release.zip",
+      "sha256": "d471e3614733c1d4ddd61bfd19868356477d0d37bf531bf8c6cb64a7f579bd2a"
+    },
+    {
+      "file": "SDL2-devel-2.32.10-mingw.zip",
+      "url": "https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-devel-2.32.10-mingw.zip",
+      "sha256": "f15cff5fca62ec9381a016ef1d42a95c638cd72d2f226ba5781c76fe43dbd1ac"
+    },
+    {
+      "file": "dxc_2026_09_29.zip",
+      "url": "https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.9.2609/dxc_2026_09_29.zip",
+      "sha256": "ad31b1fc8443175d204f77a611fdb3ef2ec42759bdc2f1167368de24a4a7e7f1"
+    }
+  ],
+  "compiler": {
+    "version": "llvm-mingw-20260908-ucrt-x86_64",
+    "url": "https://github.com/mstorsjo/llvm-mingw/releases/download/20260908/llvm-mingw-20260908-ucrt-x86_64.zip",
+    "sha256": "1bcf74d06b724aeecaa6412ca85f5b26fb1da770e7cdcefa9263c9c5c3ad34b6"
+  }
+}

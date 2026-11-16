@@ -1,0 +1,47 @@
+--- a/runtime/src/iop/io.cpp
++++ b/runtime/src/iop/io.cpp
+@@ -178,6 +178,7 @@
+ }
+ 
+ namespace ps2::iop::kernel {
++std::uint32_t cd_error();
+ 
+ namespace {
+ 
+@@ -278,7 +279,25 @@
+     };
+     static const Missing kMissing[] = {{9, "ioctl", false},  {10, "remove", true}, {11, "mkdir", true}, {12, "rmdir", true},
+                                        {13, "dopen", true},  {14, "dclose", false}, {15, "dread", false}, {17, "chstat", true},
+-                                       {25, "rename", true}, {27, "sync", true},   {31, "devctl", true}};
++                                       {25, "rename", true}, {27, "sync", true}};
++    // CDIOC_GETERROR, ps2sdk common/include/cdvd-ioctl.h. The result is written
++    // through the fifth argument; returning success alone leaves stale stack
++    // bytes in callers such as .hack's SEWORDS audio module.
++    def("ioman", 31, "devctl", [](Cpu &c) {
++        const std::string device = ram_string(arg(c, 0));
++        const std::uint32_t command = arg(c, 1), output = arg(c, 4), length = arg(c, 5);
++        if ((device == "cdrom0:" || device == "cdrom:") && command == 0x4320u && output && length >= 4) {
++            write32(output, cd_error());
++            c.r[2] = 0;
++            return;
++        }
++        static std::map<std::pair<std::string, std::uint32_t>, bool> said;
++        if (!said[{device, command}]) {
++            said[{device, command}] = true;
++            std::fprintf(stderr, "[io] unsupported devctl %s command 0x%X (ra 0x%08X)\n", device.c_str(), command, c.r[31]);
++        }
++        c.r[2] = static_cast<std::uint32_t>(-1);
++    });
+     for (const Missing &m : kMissing)
+         def("ioman", m.index, m.name, [&m](Cpu &c) {
+             static bool said[64] = {};
+--- a/runtime/src/iop/cdvd.cpp
++++ b/runtime/src/iop/cdvd.cpp
+@@ -329,6 +329,7 @@
+ }
+ 
+ bool cd_busy() { return g_cd.busy; }
++std::uint32_t cd_error() { return g_cd.error; }
+ 
+ }
+ 

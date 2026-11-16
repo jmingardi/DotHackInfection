@@ -1,0 +1,25 @@
+--- a/runtime/src/system.cpp
++++ b/runtime/src/system.cpp
+@@ -201,6 +201,10 @@
+ }
+ 
+ void latch_pads() {
++    // Some titles special-case an axis of exactly 128 instead of atan2's
++    // cardinal direction. Opt in to the other central byte for deterministic
++    // keyboard and centered controller sticks; preserve all other samples.
++    static const bool center127 = os::env("PS2_PAD_STICK_CENTER") == "127";
+     PadSample pads[2];
+     unsigned apply;
+     {
+@@ -215,7 +219,10 @@
+     for (int p = 0; p < 2; ++p) {
+         if (!(apply & (1u << p))) continue;
+         iop::sio2::set_buttons(p, pads[p].buttons);
+-        for (int a = 0; a < 4; ++a) iop::sio2::set_axis(p, a, pads[p].axes[a]);
++        for (int a = 0; a < 4; ++a) {
++            const auto value = pads[p].axes[a];
++            iop::sio2::set_axis(p, a, center127 && value == 128 ? 127 : value);
++        }
+         iop::sio2::set_pressure(p, 8, pads[p].l2);
+         iop::sio2::set_pressure(p, 9, pads[p].r2);
+         iop::sio2::set_connected(p, pads[p].connected);
