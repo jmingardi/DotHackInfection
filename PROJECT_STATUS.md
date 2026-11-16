@@ -28,7 +28,8 @@ extracted portable package passed 26 launcher checks, a bundled-compiler DLL
 probe and a fresh-profile/cache 600-frame native boot on D3D12/Windows FXC,
 exit 0. It produced its own live-code DLLs without an installed compiler on PATH.
 A smaller 120,570,884-byte package retains only the x64 compiler, runtime headers/
-libraries and notices; its separate smoke check is pending. ISO, extracted retail
+libraries and notices; its separate 26-check launcher test, DLL compiler probe and
+fresh 600-frame FXC boot also passed, exit 0. ISO, extracted retail
 executable, saves and gameplay caches are excluded from both ZIPs. DXC is not
 redistributed. The first clean hosted build compiled successfully and passed
 native input/save/VU checks, then found a developer-test assumption about shared
