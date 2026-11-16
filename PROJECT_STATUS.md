@@ -31,10 +31,18 @@ A smaller 120,570,884-byte package retains only the x64 compiler, runtime header
 libraries and notices; its separate 26-check launcher test, DLL compiler probe and
 fresh 600-frame FXC boot also passed, exit 0. ISO, extracted retail
 executable, saves and gameplay caches are excluded from both ZIPs. DXC is not
-redistributed. The first clean hosted build compiled successfully and passed
-native input/save/VU checks, then found a developer-test assumption about shared
-runtime-library location. That helper now also supports the clean build's own
-runtime library; the next hosted run will verify this correction and packaging.
+redistributed. Clean hosted build
+[43950731680](https://github.com/jmingardi/DotHackInfection/actions/runs/43950731680)
+passed source checks, native input/save/VU tests, overlay replacement and transfer
+delay regressions/negative controls, launcher checks and both package verifiers.
+It created **unpublished draft v0.1.2**, with a 120,570,201-byte Windows ZIP and
+matching authored-source ZIP, both with SHA-256 sidecars. Build source commit:
+`4f6e0881c22b70590385096e2fcf942b2a3de9b0`. The test helper supports both shared
+and directly built runtime libraries. Public PR checks were also verified on
+Linux/Windows and bound to the GitHub Actions app. No .hack binary release has
+been published. The exact downloaded hosted v0.1.2 asset also passed all 26
+launcher checks, the bundled-compiler DLL probe and a fresh-profile/cache
+600-frame FXC boot, exit 0. See `qa/GITHUB_RELEASES_2026-11-16.md` for validation.
 
 Graphical launcher added 2026-11-16. It selects and checksum-verifies the supported
 ISO, captures keyboard/mouse bindings using the exact pinned runtime keymap,
