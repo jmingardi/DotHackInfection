@@ -12,16 +12,28 @@ The CMD shortcut and `project.py run` now open that same GUI. Personal cards and
 `saves/`; QA uses separate cards. All project files remain in `.Hack Infection/`.
 The Resident Evil project is unchanged.
 
-GitHub setup in progress: public `jmingardi/DotHackInfection` and private
-`jmingardi/DotHackInfection-build-inputs` repositories created. The user approved
-the 1.5 MB/98-file generated C++ snapshot upload and single-repository read-only
-deploy key. Hosted Windows build, package verification and main-only draft release
-automation are being configured; `RELEASE_PUBLISH_ENABLED` stays false. Local
-source/input privacy and integrity checks pass (12 tests). The first local
-portable ZIP is 205,572,818 bytes, includes the pinned toolchain, and excludes
-the ISO, extracted retail executable, saves and gameplay caches. Portable-package
-and clean hosted-build QA remain pending. DXC is excluded from portable releases;
-they use the Windows FXC shader compiler. No .hack release has been published.
+GitHub repositories and access are configured: public
+`jmingardi/DotHackInfection` for development/PR merges and private
+`jmingardi/DotHackInfection-build-inputs` for the explicitly approved 1.5 MB,
+98-file generated C++ snapshot. A read-only, single-repository deploy key is
+stored in the public repository's encrypted Actions secrets. Input commit and
+ZIP SHA-256 are pinned. Private Actions are disabled. Public main requires PRs,
+code-owner review and Linux/Windows source checks; owner bypass is limited to PR
+merges. Force pushes/deletion are blocked. Pinned official Actions only, default
+read-only tokens, external-contributor workflow approval, no outside collaborators
+or self-hosted runners. `RELEASE_PUBLISH_ENABLED=false`: no public binary release.
+
+Local source/input privacy and integrity checks pass (13 tests). The first
+extracted portable package passed 26 launcher checks, a bundled-compiler DLL
+probe and a fresh-profile/cache 600-frame native boot on D3D12/Windows FXC,
+exit 0. It produced its own live-code DLLs without an installed compiler on PATH.
+A smaller 120,570,884-byte package retains only the x64 compiler, runtime headers/
+libraries and notices; its separate smoke check is pending. ISO, extracted retail
+executable, saves and gameplay caches are excluded from both ZIPs. DXC is not
+redistributed. The first clean hosted build compiled successfully and passed
+native input/save/VU checks, then found a developer-test assumption about shared
+runtime-library location. That helper now also supports the clean build's own
+runtime library; the next hosted run will verify this correction and packaging.
 
 Graphical launcher added 2026-11-16. It selects and checksum-verifies the supported
 ISO, captures keyboard/mouse bindings using the exact pinned runtime keymap,
@@ -122,5 +134,5 @@ See `qa/LAUNCHER_2026-11-16.md` for reproduction and limitations.
 See [QA_REPORT.md](QA_REPORT.md) for coverage and repeatable commands. Extracted
 assets, raw diagnostics, screenshots, compiled code and cards stay local and are
 excluded from source sharing. Public authored source and the separately approved
-private generated-input snapshot are the only planned repository uploads;
+private generated-input snapshot are the only repository uploads;
 no .hack binary release has been published.

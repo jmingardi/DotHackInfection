@@ -245,7 +245,11 @@ def test():
         run([str(FW / f"build/native-{NAME}/{target}.exe")], log=target + ".log", env=env)
         print(f"{target}: passed", flush=True)
     cache_text = (FW / f"build/native-{NAME}/CMakeCache.txt").read_text()
-    library = re.search(r"^PS2_RUNTIME_LIB:FILEPATH=(.+)$", cache_text, re.M).group(1)
+    configured_runtime = re.search(r"^PS2_RUNTIME_LIB:FILEPATH=(.*)$", cache_text, re.M)
+    library = (configured_runtime.group(1).strip() if configured_runtime else "") or str(
+        FW / f"build/native-{NAME}/libps2runtime.a")
+    if not Path(library).is_file():
+        raise FileNotFoundError(f"Build the native runtime before testing: {library}")
     wgpu = re.search(r"^PS2_WGPU_DIR:PATH=(.+)$", cache_text, re.M).group(1)
     executable = ROOT / "toolchains/tmp/overlay-test.exe"
     run([str(compiler_root() / "bin/clang++.exe"), "-std=c++20", "-O2",

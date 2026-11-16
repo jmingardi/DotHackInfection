@@ -44,6 +44,19 @@ def public_source(name):
                            (p.suffix in PUBLIC_SUFFIXES or name == ".github/CODEOWNERS")))
 
 
+def compiler_file(name):
+    """Only the x64 live compiler, headers/libraries and original notices."""
+    if not safe(name):
+        return False
+    p = PurePosixPath(name)
+    return (name == "LICENSE.TXT" or name.startswith(("include/", "lib/clang/",
+            "x86_64-w64-mingw32/", "share/libc++/")) or
+            (p.parent.as_posix() == "bin" and
+             (p.name in {"clang++.exe", "clang.exe", "ld.lld.exe", "libclang-cpp.dll", "libc++.dll",
+                         "libunwind.dll", "libwinpthread-1.dll"} or p.suffix == ".cfg"
+              or re.fullmatch(r"clang-[0-9]+\.exe|libLLVM-[0-9]+\.dll", p.name) is not None)))
+
+
 def windows_file(name):
     if not safe(name):
         return False
@@ -52,11 +65,12 @@ def windows_file(name):
         return False
     if p.suffix.lower() in {".iso", ".elf", ".ps2", ".state", ".bin"}:
         return False
+    prefix = "toolchains/" + project.LOCK["compiler"]["version"] + "/"
     return (name in {"DotHackInfection.exe", "DotHackInfection.exe.config", "dependencies.lock.json", "README.txt"}
             or name in {NATIVE + "ps2run.exe", NATIVE + "SDL2.dll", TOOLS + "eerecomp.exe",
                         "launcher-bin/dh_controls.dll", "launcher-bin/SDL2.dll"}
             or name.startswith("licenses/") or name.startswith("launcher-bin/licenses/")
-            or name.startswith("toolchains/" + project.LOCK["compiler"]["version"] + "/"))
+            or (name.startswith(prefix) and compiler_file(name[len(prefix):])))
 
 
 def archive_path(kind, number):
@@ -133,14 +147,17 @@ def create_archive(kind, number):
             compiler = project.LOCK["compiler"]
             archive = ROOT / "downloads" / (compiler["version"] + ".zip")
             project.fetch(compiler, archive)
-            # Copy the checksum-verified original compiler payload, never a local
-            # working toolchain or cache. Keep all its original license notices.
+            # Take the x64 live-compiler subset from the checksum-verified archive,
+            # never a working toolchain/cache. Keep its original notices. Debuggers,
+            # Python, BusyBox, make and other-target sysroots are unnecessary.
             with zipfile.ZipFile(archive) as tools:
                 for info in tools.infolist():
                     if not info.is_dir():
                         if not safe(info.filename) or not info.filename.startswith(compiler["version"] + "/"):
                             raise ValueError("Unexpected compiler archive layout")
-                        add("toolchains/" + info.filename, tools.read(info))
+                        relative = info.filename[len(compiler["version"]) + 1:]
+                        if compiler_file(relative):
+                            add("toolchains/" + info.filename, tools.read(info))
             add("README.txt", (ROOT / "docs/WINDOWS_README.txt").read_bytes())
         metadata = {"schema": 1, "kind": kind, "version": number,
                     "source_commit": os.environ.get("SOURCE_COMMIT", "local-unpublished"),
