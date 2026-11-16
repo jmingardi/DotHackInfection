@@ -40,6 +40,15 @@ class ReleaseSafety(unittest.TestCase):
             self.assertFalse(release.public_source(name))
             self.assertFalse(release.windows_file(name))
 
+    def test_compiler_subset(self):
+        for name in ("bin/clang++.exe", "bin/clang-23.exe", "bin/ld.lld.exe", "bin/libLLVM-23.dll",
+                     "bin/x86_64-w64-windows-gnu.cfg", "include/c++/v1/format",
+                     "x86_64-w64-mingw32/lib/libc++.a", "LICENSE.TXT"):
+            self.assertTrue(release.compiler_file(name), name)
+        for name in ("busybox/busybox.exe", "bin/mingw32-make.exe", "python/bin/python3.exe", "bin/lldb.exe",
+                     "aarch64-w64-mingw32/lib/libc++.a", "../private.iso"):
+            self.assertFalse(release.compiler_file(name), name)
+
 
 class PrivateRestore(unittest.TestCase):
     def setUp(self):

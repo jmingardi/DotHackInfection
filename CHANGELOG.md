@@ -1,5 +1,17 @@
 # Changelog
 
+## Release pipeline - 2026-11-16
+
+- Add public development/private generated-input repositories and GitHub-hosted
+  Windows builds, using pinned dependencies and read-only private input access.
+- Protect main with owner review and Linux/Windows source checks; keep fork checks
+  secret-free. Disable publication initially; main merges create draft candidates.
+- Build native game/launcher, run selected regressions, verify ZIP contents and
+  checksums, then attach Windows/source packages directly to a new draft.
+- Bundle only the x64 compiler components needed for code translation during play;
+  omit discs, extracted executables, saves, caches and DXC redistribution.
+- Support both shared and directly built runtime libraries in developer tests.
+
 ## Launcher 0.1.0 - 2026-11-16
 
 - Add a compiled Windows launcher with supported-ISO selection/verification,
