@@ -1,4 +1,4 @@
-# .hack//INFECTION native recomp investigation
+# .hack//INFECTION native recomp
 
 Windows x64 project for the USA PS2 release, `SLUS-20267`, using the local
 `Dot Hack Part 1 - Infection (USA).iso`. Actual compatibility and QA outcomes
